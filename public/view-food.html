@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rinova | View Food</title>
+  <link rel="icon" href="logo.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+
+  <main>
+    <div class="card">
+      <div class="toolbar">
+        <h2 style="margin:0;">Food Listings</h2>
+        <div>
+          Show:
+          <select id="statusFilter">
+            <option value="All">All</option>
+            <option value="Available">Available</option>
+            <option value="Requested">Requested</option>
+            <option value="Collected">Collected</option>
+            <option value="Expired">Expired</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="message" class="message"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:44px;">ID</th>
+              <th>Food</th>
+              <th>Quantity</th>
+              <th>Expires</th>
+              <th>Location</th>
+              <th>Donor</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="foodBody"></tbody>
+        </table>
+      </div>
+      <div id="emptyNote" class="empty" style="display:none;">No food found.</div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    let currentUser;
+
+    async function loadFood() {
+      const filter = document.getElementById('statusFilter').value;
+      const foods = await apiGet('/food');
+      const now = new Date();
+
+      // Work out which listings are expired, then apply the filter
+      const items = foods.map(f => ({
+        ...f,
+        expired: f.status === 'Available' && new Date(f.expiry_time) <= now
+      }));
+
+      const rows = items.filter(f => {
+        if (filter === 'All') return true;
+        if (filter === 'Expired') return f.expired;
+        if (filter === 'Available') return f.status === 'Available' && !f.expired;
+        return f.status === filter;
+      });
+
+      document.getElementById('foodBody').innerHTML = rows.map(f => {
+        const badge = f.expired ? 'Expired' : f.status;
+
+        let action = '';
+        if (currentUser.role === 'Receiver' && f.status === 'Available' && !f.expired) {
+          action = `<button onclick="requestFood(${f.food_id})">Request</button>`;
+        }
+        if (currentUser.role === 'Donor' && f.posted_by === currentUser.user_id && f.status === 'Available') {
+          action = `
+            <div class="actions">
+              <button class="secondary" onclick="location.href='add-food.html?id=${f.food_id}'">Edit</button>
+              <button class="danger" onclick="deleteFood(${f.food_id})">Delete</button>
+            </div>`;
+        }
+
+        return `
+          <tr>
+            <td style="font-weight:600; color:var(--olive);">${f.food_id}</td>
+            <td>${escapeHtml(f.food_name)}</td>
+            <td>${escapeHtml(f.quantity)}</td>
+            <td>${escapeHtml(f.expiry_time)}</td>
+            <td>${escapeHtml(f.location)}</td>
+            <td>${escapeHtml(f.donor_name)}</td>
+            <td><span class="badge ${badge}">${badge}</span></td>
+            <td>${action}</td>
+          </tr>`;
+      }).join('');
+
+      document.getElementById('emptyNote').style.display = rows.length ? 'none' : 'block';
+    }
+
+    async function requestFood(foodId) {
+      const result = await apiSend('POST', '/requests', {
+        food_id: foodId,
+        requested_by: currentUser.user_id
+      });
+
+      if (result.ok) {
+        showMessage('success', 'Food requested! A coordinator will review your request.');
+      } else {
+        showMessage('error', result.data.error);
+      }
+      loadFood();
+    }
+
+    async function deleteFood(foodId) {
+      if (!confirm('Delete this listing? This cannot be undone.')) return;
+
+      const result = await apiSend('DELETE', '/food/' + foodId, {
+        user_id: currentUser.user_id
+      });
+      showMessage(result.ok ? 'success' : 'error', result.ok ? result.data.message : result.data.error);
+      loadFood();
+    }
+
+    async function init() {
+      currentUser = await setupUserSelector();
+
+      // Receivers mainly care about available food
+      if (currentUser.role === 'Receiver') {
+        document.getElementById('statusFilter').value = 'Available';
+      }
+      document.getElementById('statusFilter').addEventListener('change', loadFood);
+
+      loadFood();
+    }
+
+    init();
+  </script>
+</body>
+</html>

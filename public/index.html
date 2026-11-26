@@ -2,10 +2,82 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Food Waste Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rinova | Home</title>
+  <link rel="icon" href="logo.svg">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Leftover Food Management</h1>
-  <p>Setup works. We'll build the real pages soon.</p>
+  <header id="siteHeader"></header>
+
+  <main class="home-main">
+
+    <section class="hero">
+      <img src="logo.svg" alt="Rinova logo">
+      <div class="wordmark">rinova</div>
+      <div class="sub">Food · Care · Community</div>
+      <div class="tagline">Every meal deserves a second chance.</div>
+    </section>
+
+    <section class="welcome">
+      <h2>Welcome, <span id="userName"></span></h2>
+      <p id="roleHelp"></p>
+    </section>
+
+    <section>
+      <div class="summary-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3v5a3 3 0 0 0 6 0V3M8 3v18"/>
+          <ellipse cx="17" cy="7.5" rx="3" ry="4.5"/>
+          <path d="M17 12v9"/>
+        </svg>
+        <h2>Food Summary</h2>
+      </div>
+
+      <div class="summary">
+        <div class="box available">
+          <svg viewBox="0 0 24 24"><path d="M3 18h18M5 18a7 7 0 0 1 14 0M12 8V6M10.5 6h3"/></svg>
+          <div><div class="num" id="countAvailable">0</div><div class="label">Available</div></div>
+        </div>
+        <div class="box requested">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12.5l3 3 5-6"/></svg>
+          <div><div class="num" id="countRequested">0</div><div class="label">Requested</div></div>
+        </div>
+        <div class="box collected">
+          <svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+          <div><div class="num" id="countCollected">0</div><div class="label">Collected</div></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    const roleHelp = {
+      Donor: 'You can add leftover food on the Add Food page and see its status on View Food.',
+      Receiver: 'You can browse available food on the View Food page and request a pickup.',
+      Coordinator: 'You can approve or reject requests and mark food as collected on the Coordinator page.'
+    };
+
+    async function init() {
+      const user = await setupUserSelector();
+      document.getElementById('userName').textContent = user.name;
+      document.getElementById('roleHelp').textContent = roleHelp[user.role];
+
+      const foods = await apiGet('/food');
+      const now = new Date();
+
+      // Expired food is not counted as Available
+      const available = foods.filter(f => f.status === 'Available' && new Date(f.expiry_time) > now).length;
+      const count = status => foods.filter(f => f.status === status).length;
+
+      document.getElementById('countAvailable').textContent = available;
+      document.getElementById('countRequested').textContent = count('Requested');
+      document.getElementById('countCollected').textContent = count('Collected');
+    }
+
+    init();
+  </script>
 </body>
 </html>

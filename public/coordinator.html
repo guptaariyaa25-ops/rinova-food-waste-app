@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rinova | Coordinator</title>
+  <link rel="icon" href="logo.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+
+  <main>
+    <div id="roleWarning" class="warning" style="display:none; margin-bottom:20px;">
+      Only a Coordinator can use this page. Switch to a Coordinator using the dropdown at the top.
+    </div>
+
+    <div id="panel">
+      <div id="message" class="message"></div>
+
+      <div class="card">
+        <h3>Pending Requests</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Req ID</th><th>Food ID</th><th>Food</th><th>Quantity</th><th>Location</th><th>Requested by</th><th>Phone</th><th>Action</th></tr>
+            </thead>
+            <tbody id="pendingBody"></tbody>
+          </table>
+        </div>
+        <div id="pendingEmpty" class="empty" style="display:none;">No pending requests.</div>
+      </div>
+
+      <div class="card">
+        <h3>Approved: Ready for Collection</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Req ID</th><th>Food ID</th><th>Food</th><th>Quantity</th><th>Location</th><th>Requested by</th><th>Phone</th><th>Action</th></tr>
+            </thead>
+            <tbody id="approvedBody"></tbody>
+          </table>
+        </div>
+        <div id="approvedEmpty" class="empty" style="display:none;">Nothing waiting for collection.</div>
+      </div>
+
+      <div class="card">
+        <h3>History</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Req ID</th><th>Food ID</th><th>Food</th><th>Quantity</th><th>Requested by</th><th>Result</th></tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+        <div id="historyEmpty" class="empty" style="display:none;">No completed or rejected requests yet.</div>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    let currentUser;
+
+    const idStyle = 'font-weight:600; color:var(--olive);';
+
+    function row(r, buttons) {
+      return `
+        <tr>
+          <td style="${idStyle}">${r.request_id}</td>
+          <td style="${idStyle}">${r.food_id}</td>
+          <td>${escapeHtml(r.food_name)}</td>
+          <td>${escapeHtml(r.quantity)}</td>
+          <td>${escapeHtml(r.location)}</td>
+          <td>${escapeHtml(r.requested_by_name)}</td>
+          <td>${escapeHtml(r.requested_by_phone)}</td>
+          <td>${buttons}</td>
+        </tr>`;
+    }
+
+    async function loadRequests() {
+      const all = await apiGet('/requests');
+
+      const pending = all.filter(r => r.request_status === 'Pending');
+      const approved = all.filter(r => r.request_status === 'Approved');
+      const history = all.filter(r => ['Completed', 'Rejected'].includes(r.request_status));
+
+      document.getElementById('pendingBody').innerHTML = pending.map(r => row(r,
+        `<div class="actions">
+           <button onclick="decide(${r.request_id}, 'approve')">Approve</button>
+           <button class="danger" onclick="decide(${r.request_id}, 'reject')">Reject</button>
+         </div>`
+      )).join('');
+
+      document.getElementById('approvedBody').innerHTML = approved.map(r => row(r,
+        `<div class="actions">
+           <button class="secondary" onclick="collect(${r.food_id})">Mark Collected</button>
+         </div>`
+      )).join('');
+
+      document.getElementById('historyBody').innerHTML = history.map(r => `
+        <tr>
+          <td style="${idStyle}">${r.request_id}</td>
+          <td style="${idStyle}">${r.food_id}</td>
+          <td>${escapeHtml(r.food_name)}</td>
+          <td>${escapeHtml(r.quantity)}</td>
+          <td>${escapeHtml(r.requested_by_name)}</td>
+          <td><span class="badge ${r.request_status}">${r.request_status}</span></td>
+        </tr>`).join('');
+
+      document.getElementById('pendingEmpty').style.display = pending.length ? 'none' : 'block';
+      document.getElementById('approvedEmpty').style.display = approved.length ? 'none' : 'block';
+      document.getElementById('historyEmpty').style.display = history.length ? 'none' : 'block';
+    }
+
+    async function decide(requestId, action) {
+      const result = await apiSend('PUT', '/requests/' + requestId, {
+        coordinator_id: currentUser.user_id,
+        action: action
+      });
+      showMessage(result.ok ? 'success' : 'error', result.ok ? result.data.message : result.data.error);
+      loadRequests();
+    }
+
+    async function collect(foodId) {
+      const result = await apiSend('PUT', '/food/' + foodId + '/status', {
+        user_id: currentUser.user_id,
+        status: 'Collected'
+      });
+      showMessage(result.ok ? 'success' : 'error', result.ok ? result.data.message : result.data.error);
+      loadRequests();
+    }
+
+    async function init() {
+      currentUser = await setupUserSelector();
+
+      if (currentUser.role !== 'Coordinator') {
+        document.getElementById('roleWarning').style.display = 'block';
+        document.getElementById('panel').style.display = 'none';
+        return;
+      }
+      loadRequests();
+    }
+
+    init();
+  </script>
+</body>
+</html>

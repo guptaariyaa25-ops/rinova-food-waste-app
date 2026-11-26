@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rinova | Add Food</title>
+  <link rel="icon" href="logo.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+
+  <main>
+    <div class="card">
+      <h2 id="pageTitle">Add Leftover Food</h2>
+
+      <div id="roleWarning" class="warning" style="display:none;">
+        Only a Donor can add food. Switch to a Donor using the dropdown at the top.
+      </div>
+
+      <form id="foodForm">
+        <label for="food_name">Food name</label>
+        <input type="text" id="food_name" maxlength="60" placeholder="e.g. Cooked Rice">
+
+        <label for="quantity">Quantity</label>
+        <input type="text" id="quantity" maxlength="30" placeholder="e.g. 10 kg">
+
+        <label for="expiry_time">Expiry time</label>
+        <input type="datetime-local" id="expiry_time">
+
+        <label for="location">Location</label>
+        <input type="text" id="location" maxlength="60" placeholder="e.g. Salt Lake">
+
+        <button type="submit" id="submitBtn">Submit</button>
+      </form>
+
+      <div id="message" class="message"></div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    let currentUser;
+    const editId = new URLSearchParams(location.search).get('id');   // null when adding
+
+    // Returns an error message, or null when the form is fine
+    function validate(f) {
+      if (!f.food_name || !f.quantity || !f.expiry_time || !f.location) {
+        return 'Please fill in all fields.';
+      }
+      if (f.food_name.length < 2 || f.food_name.length > 60) {
+        return 'Food name must be 2 to 60 characters.';
+      }
+      if (f.quantity.length > 30) {
+        return 'Quantity must be at most 30 characters.';
+      }
+      if (!/\d/.test(f.quantity)) {
+        return 'Quantity must include a number, for example "10 kg".';
+      }
+      if (f.location.length < 2 || f.location.length > 60) {
+        return 'Location must be 2 to 60 characters.';
+      }
+      if (new Date(f.expiry_time) <= new Date()) {
+        return 'Expiry time must be in the future.';
+      }
+      return null;
+    }
+
+    async function init() {
+      currentUser = await setupUserSelector();
+      document.getElementById('expiry_time').removeAttribute('min');
+
+      if (currentUser.role !== 'Donor') {
+        document.getElementById('roleWarning').style.display = 'block';
+        document.getElementById('submitBtn').disabled = true;
+        return;
+      }
+
+      if (editId) {
+        const food = await apiGet('/food/' + editId);
+        if (food.error) {
+          showMessage('error', food.error);
+          document.getElementById('submitBtn').disabled = true;
+          return;
+        }
+        document.getElementById('pageTitle').textContent = 'Edit Leftover Food';
+        document.getElementById('submitBtn').textContent = 'Save Changes';
+        document.getElementById('food_name').value = food.food_name;
+        document.getElementById('quantity').value = food.quantity;
+        document.getElementById('expiry_time').value = food.expiry_time.replace(' ', 'T');
+        document.getElementById('location').value = food.location;
+      }
+    }
+
+    document.getElementById('foodForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const fields = {
+        food_name: document.getElementById('food_name').value.trim(),
+        quantity: document.getElementById('quantity').value.trim(),
+        expiry_time: document.getElementById('expiry_time').value,
+        location: document.getElementById('location').value.trim()
+      };
+
+      const problem = validate(fields);
+      if (problem) {
+        showMessage('error', problem);
+        return;
+      }
+
+      // Stop double clicks from saving twice
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+
+      let result;
+      if (editId) {
+        result = await apiSend('PUT', '/food/' + editId, {
+          user_id: currentUser.user_id,
+          ...fields
+        });
+      } else {
+        result = await apiSend('POST', '/food', {
+          posted_by: currentUser.user_id,
+          ...fields
+        });
+      }
+
+      if (result.ok) {
+        if (editId) {
+          location.href = 'view-food.html';   // go back to the list after saving
+          return;
+        }
+        showMessage('success', 'Food added successfully! (ID: ' + result.data.food_id + ')');
+        document.getElementById('foodForm').reset();
+      } else {
+        showMessage('error', result.data.error);
+      }
+      btn.disabled = false;
+    });
+
+    init();
+  </script>
+</body>
+</html>
